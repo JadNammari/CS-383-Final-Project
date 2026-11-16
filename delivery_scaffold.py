@@ -222,6 +222,73 @@ def print_report(result, label=""):
 # YOUR WORK STARTS HERE
 # ---------------------------------------------------------------------
 
+def build_graph(pathways):
+    """Build an undirected adjacency list from pathways.csv rows.
+
+    Each neighbor entry is [building_id, distance_m, time_s], matching
+    the edge format used by dijkstra() below.
+    """
+    graph = {}
+    for p in pathways:
+        a, b = p["building_a"], p["building_b"]
+        graph.setdefault(a, []).append([b, p["distance_m"], p["time_s"]])
+        graph.setdefault(b, []).append([a, p["distance_m"], p["time_s"]])
+    return graph
+
+
+def dijkstra(adj, src):
+    """Shortest paths from src by distance.
+
+    Returns (dist, path, time_path):
+      dist[v]      -- shortest distance (m) from src to v
+      path[v]      -- list of building ids along that route
+      time_path[v] -- travel time (s) along that same route
+    """
+    pq = []
+    dist = {u: float("inf") for u in adj}
+    dist[src] = 0
+    heapq.heappush(pq, (0, src))
+
+    path = {u: [] for u in adj}
+    path[src] = [src]
+
+    time_path = {u: 0 for u in adj}
+    time_path[src] = 0
+
+    while pq:
+        d, u = heapq.heappop(pq)
+        if d > dist[u]:
+            continue
+        for x in adj[u]:
+            v, weight, time = x[0], x[1], x[2]
+            if dist[v] > d + weight:
+                path[v] = path[u] + [v]
+                dist[v] = d + weight
+                time_path[v] = time_path[u] + time
+                heapq.heappush(pq, (dist[v], v))
+
+    return dist, path, time_path
+
+
+def all_pairs_shortest(pathways):
+    """Run Dijkstra from every building. Useful lookup for the solver."""
+    adj = build_graph(pathways)
+    return {src: dijkstra(adj, src) for src in adj}
+
+
+def print_routes(results):
+    """Print the best route for every pair of buildings (each pair once)."""
+    order = sorted(results.keys())
+    print("\nBest route for each pair (shortest distance)")
+    print(f"{'From':<6}{'To':<6}{'Dist (m)':>9}{'Time (s)':>10}   Route")
+    print("-" * 60)
+    for i, s in enumerate(order):
+        dist, path, time_path = results[s]
+        for d in order[i + 1:]:
+            route = " -> ".join(path[d])
+            print(f"{s:<6}{d:<6}{dist[d]:>9.0f}{time_path[d]:>10.0f}   {route}")
+
+
 def solve(buildings, pathways, deliveries, depot="B16", capacity=15.0):
     """
     Produce a delivery plan (see SOLUTION FORMAT above).
@@ -233,11 +300,27 @@ def solve(buildings, pathways, deliveries, depot="B16", capacity=15.0):
       - How will you decide which requests to carry together, given
         the capacity limit?
     """
-    raise NotImplementedError("Design and implement your solver here.")
+    # Precompute shortest paths between every pair of buildings.
+    # results[src] = (dist, path, time_path)
+    results = all_pairs_shortest(pathways)
+
+    # TODO: use results + deliveries + capacity to build a smarter plan
+    # (batch requests, reorder stops). Baseline: one request at a time.
+    plan = [{"building": depot, "action": "start"}]
+    for req in deliveries:
+        rid = req["request_id"]
+        plan.append({"building": req["pickup"], "action": "pickup", "request_id": rid})
+        plan.append({"building": req["dropoff"], "action": "dropoff", "request_id": rid})
+    plan.append({"building": depot, "action": "end"})
+    return plan
 
 
 if __name__ == "__main__":
     buildings, pathways, deliveries = load_data()
+
+    # Show all-pairs shortest routes (distance + time + path)
+    results = all_pairs_shortest(pathways)
+    print_routes(results)
 
     for label, n in [("SMALL", 8), ("MEDIUM", 16), ("FULL", 30)]:
         subset = deliveries[:n]
